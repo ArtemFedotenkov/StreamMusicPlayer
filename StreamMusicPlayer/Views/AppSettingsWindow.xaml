@@ -1,0 +1,116 @@
+<Window x:Class="StreamMusicPlayer.Views.AppSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{DynamicResource SettingsWindowTitle}"
+        Width="640"
+        Height="600"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Icon="/iconka.ico"
+        Background="{DynamicResource WindowBackgroundBrush}">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Padding="16"
+                Background="{DynamicResource PanelBackgroundBrush}"
+                BorderBrush="{DynamicResource PanelBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="180" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="46" />
+                    <RowDefinition Height="46" />
+                    <RowDefinition Height="46" />
+                    <RowDefinition Height="92" />
+                    <RowDefinition Height="64" />
+                    <RowDefinition Height="124" />
+                    <RowDefinition Height="48" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="{DynamicResource ColorPalette}" Foreground="{DynamicResource MutedTextBrush}" />
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding Themes}"
+                          DisplayMemberPath="DisplayName"
+                          SelectedItem="{Binding SelectedTheme}" />
+
+                <TextBlock Grid.Row="1" Text="{DynamicResource Language}" Foreground="{DynamicResource MutedTextBrush}" />
+                <ComboBox Grid.Row="1"
+                          Grid.Column="1"
+                          ItemsSource="{Binding Languages}"
+                          DisplayMemberPath="DisplayName"
+                          SelectedItem="{Binding SelectedLanguage}" />
+
+                <TextBlock Grid.Row="2" Text="{DynamicResource AudioOutputDevice}" Foreground="{DynamicResource MutedTextBrush}" />
+                <ComboBox Grid.Row="2"
+                          Grid.Column="1"
+                          ItemsSource="{Binding AudioDevices}"
+                          DisplayMemberPath="DisplayName"
+                          SelectedItem="{Binding SelectedAudioDevice}" />
+
+                <TextBlock Grid.Row="3" Text="{DynamicResource ProgramData}" Foreground="{DynamicResource MutedTextBrush}" />
+                <StackPanel Grid.Row="3" Grid.Column="1" VerticalAlignment="Center">
+                    <Button Content="{DynamicResource ButtonResetData}"
+                            MinWidth="170"
+                            HorizontalAlignment="Left"
+                            Command="{Binding ResetDataCommand}" />
+                    <TextBlock Margin="0,8,0,0"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               TextWrapping="Wrap"
+                               Text="{DynamicResource ResetDataDescription}" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="4" Text="{DynamicResource Backup}" Foreground="{DynamicResource MutedTextBrush}" />
+                <StackPanel Grid.Row="4"
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <Button Content="{DynamicResource ButtonExport}" Command="{Binding ExportCommand}" />
+                    <Button Content="{DynamicResource ButtonImport}" Command="{Binding ImportCommand}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="5"
+                            Grid.ColumnSpan="2"
+                            VerticalAlignment="Center"
+                            Margin="0,8,0,8">
+                    <TextBlock TextWrapping="Wrap">
+                        <Run Text="{DynamicResource AuthorDonateText}" />
+                        <Hyperlink NavigateUri="https://destream.net/live/FEDOT/donate"
+                                   RequestNavigate="Link_RequestNavigate">
+                            <Run Text="{DynamicResource DonateLinkText}" />
+                        </Hyperlink>
+                    </TextBlock>
+                    <TextBlock Margin="0,6,0,0" TextWrapping="Wrap">
+                        <Run Text="{DynamicResource AuthorYoutubeText}" />
+                        <Hyperlink NavigateUri="https://www.youtube.com/channel/UCAPMkkZzlYhVX4Rn5hRCW9g"
+                                   RequestNavigate="Link_RequestNavigate">
+                            <Run Text="{DynamicResource YoutubeLinkText}" />
+                        </Hyperlink>
+                    </TextBlock>
+                </StackPanel>
+
+                <TextBlock Grid.Row="6"
+                           Grid.ColumnSpan="2"
+                           Text="{Binding StatusMessage}"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           VerticalAlignment="Bottom" />
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="1"
+                    Margin="0,14,0,0"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button Content="{DynamicResource ButtonSave}" Command="{Binding SaveCommand}" />
+            <Button Content="{DynamicResource ButtonClose}"
+                    Margin="0"
+                    Click="CloseButton_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

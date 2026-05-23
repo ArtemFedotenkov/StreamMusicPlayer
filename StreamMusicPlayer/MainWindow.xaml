@@ -1,0 +1,346 @@
+<Window x:Class="StreamMusicPlayer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:StreamMusicPlayer.ViewModels"
+        mc:Ignorable="d"
+        Title="{DynamicResource AppTitle}"
+        Width="1120"
+        Height="720"
+        MinWidth="960"
+        MinHeight="620"
+        Icon="/iconka.ico"
+        Background="{DynamicResource WindowBackgroundBrush}">
+    <Window.DataContext>
+        <viewModels:MainViewModel />
+    </Window.DataContext>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="58" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="28" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Padding="18,0"
+                Background="{DynamicResource PanelBackgroundBrush}"
+                BorderBrush="{DynamicResource PanelBorderBrush}"
+                BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <Button Content="{DynamicResource ButtonConnectObs}"
+                            MinWidth="118"
+                            Command="{Binding ConnectObsCommand}" />
+                    <Button Content="{DynamicResource ButtonObsSettings}"
+                            MinWidth="112"
+                            Command="{Binding OpenObsSettingsCommand}" />
+                    <Button Content="{DynamicResource ButtonEventRules}"
+                            MinWidth="106"
+                            Margin="0"
+                            Command="{Binding OpenEventRulesCommand}" />
+                </StackPanel>
+
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource AppTitle}"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Margin="0,0,18,0" />
+                    <Border Width="1"
+                            Height="20"
+                            Background="{DynamicResource PanelBorderBrush}"
+                            Margin="0,0,14,0" />
+                    <TextBlock Text="{Binding ObsStatusText}"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               Margin="0,0,14,0" />
+                    <TextBlock Text="{Binding ActiveSceneText}"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               Margin="0,0,14,0" />
+                    <TextBlock Text="{Binding CurrentPlaylistText}"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               Margin="0,0,14,0" />
+                    <TextBlock Text="{Binding PlaybackStateText}"
+                               Foreground="{DynamicResource MutedTextBrush}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="214" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{DynamicResource PanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource PanelBorderBrush}"
+                    BorderThickness="0,0,1,0">
+                <DockPanel LastChildFill="True">
+                    <Grid DockPanel.Dock="Top" Height="54" Margin="14,8,10,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="36" />
+                            <ColumnDefinition Width="36" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{DynamicResource PlaylistsHeader}"
+                                   Foreground="{DynamicResource MutedTextBrush}"
+                                   FontWeight="SemiBold" />
+                        <Button Grid.Column="1"
+                                Content="↑"
+                                Width="28"
+                                Height="28"
+                                MinWidth="28"
+                                MinHeight="28"
+                                Padding="0"
+                                Margin="0,0,6,0"
+                                FontSize="14"
+                                FontWeight="SemiBold"
+                                ToolTip="{DynamicResource TooltipMovePlaylistUp}"
+                                Command="{Binding MovePlaylistLeftCommand}" />
+                        <Button Grid.Column="2"
+                                Content="↓"
+                                Width="28"
+                                Height="28"
+                                MinWidth="28"
+                                MinHeight="28"
+                                Padding="0"
+                                Margin="0"
+                                FontSize="14"
+                                FontWeight="SemiBold"
+                                ToolTip="{DynamicResource TooltipMovePlaylistDown}"
+                                Command="{Binding MovePlaylistRightCommand}" />
+                    </Grid>
+
+                    <StackPanel DockPanel.Dock="Bottom" Margin="12,0,12,12">
+                        <Button Content="{DynamicResource ButtonAddPlaylist}"
+                                HorizontalAlignment="Stretch"
+                                MinHeight="34"
+                                Margin="0,0,0,8"
+                                Command="{Binding AddPlaylistCommand}" />
+                        <Button Content="{DynamicResource ButtonRemovePlaylist}"
+                                HorizontalAlignment="Stretch"
+                                MinHeight="34"
+                                Margin="0,0,0,8"
+                                Command="{Binding RemovePlaylistCommand}" />
+                        <Button Content="{DynamicResource ButtonAppSettings}"
+                                HorizontalAlignment="Stretch"
+                                MinHeight="34"
+                                Margin="0"
+                                Command="{Binding OpenAppSettingsCommand}" />
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding Playlists}"
+                             SelectedItem="{Binding SelectedPlaylist}"
+                             BorderThickness="0"
+                             Margin="8,0,8,12"
+                             Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid MinHeight="32">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Name}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Tracks.Count, StringFormat=({0})}"
+                                               Foreground="{DynamicResource MutedTextBrush}"
+                                               Margin="8,0,2,0" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <Grid Grid.Column="1" Margin="14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="154" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Background="{DynamicResource PanelBackgroundBrush}"
+                        BorderBrush="{DynamicResource PanelBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="54" />
+                            <RowDefinition Height="48" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" Margin="14,12,14,6" LastChildFill="True">
+                            <StackPanel Orientation="Horizontal"
+                                        VerticalAlignment="Center"
+                                        Margin="0">
+                                <TextBox Width="280"
+                                         FontWeight="SemiBold"
+                                         Text="{Binding SelectedPlaylistName, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Text="{Binding SelectedPlaylistTracksCountText}"
+                                           Foreground="{DynamicResource MutedTextBrush}"
+                                           Margin="12,0,0,0" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <WrapPanel Grid.Row="1"
+                                   Margin="14,0,14,10"
+                                   Orientation="Horizontal"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center">
+                            <Button Content="{DynamicResource ButtonAddFiles}"
+                                    MinWidth="90"
+                                    Command="{Binding AddTracksCommand}" />
+                            <Button Content="{DynamicResource ButtonAddFolder}"
+                                    MinWidth="96"
+                                    Command="{Binding AddFolderCommand}" />
+                            <Button Content="{DynamicResource ButtonRemoveTrack}"
+                                    MinWidth="108"
+                                    Command="{Binding RemoveTrackCommand}" />
+                            <Button Content="{DynamicResource ButtonClearPlaylist}"
+                                    MinWidth="106"
+                                    Command="{Binding ClearPlaylistCommand}" />
+                            <Button Content="{DynamicResource ButtonPlaylistRules}"
+                                    MinWidth="108"
+                                    Margin="0"
+                                    Command="{Binding OpenPlaylistRulesCommand}" />
+                        </WrapPanel>
+
+                        <DataGrid Grid.Row="2"
+                                  Margin="10,0,10,10"
+                                  ItemsSource="{Binding SelectedPlaylist.Tracks}"
+                                  SelectedItem="{Binding SelectedTrack}"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  IsReadOnly="True"
+                                  GridLinesVisibility="Horizontal"
+                                  HeadersVisibility="Column">
+                            <DataGrid.InputBindings>
+                                <MouseBinding MouseAction="LeftDoubleClick"
+                                              Command="{Binding PlaySelectedTrackCommand}" />
+                            </DataGrid.InputBindings>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="#" Binding="{Binding SortOrder}" Width="44" />
+                                <DataGridTextColumn Header="{DynamicResource ColumnTitle}" Binding="{Binding DisplayTitle}" Width="2*" />
+                                <DataGridTextColumn Header="{DynamicResource ColumnArtist}" Binding="{Binding Artist}" Width="*" />
+                                <DataGridTextColumn Header="{DynamicResource ColumnDuration}" Binding="{Binding DurationText}" Width="96" />
+                                <DataGridTextColumn Header="{DynamicResource ColumnStatus}" Binding="{Binding Status}" Width="96" />
+                                <DataGridTextColumn Header="{DynamicResource ColumnPath}" Binding="{Binding FilePath}" Width="3*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1"
+                        Margin="0,10,0,0"
+                        Padding="14"
+                        Background="{DynamicResource PanelBackgroundBrush}"
+                        BorderBrush="{DynamicResource PanelBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="38" />
+                            <RowDefinition Height="44" />
+                            <RowDefinition Height="34" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="380" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="210" />
+                            <ColumnDefinition Width="210" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0">
+                            <TextBlock Text="{DynamicResource NowPlaying}"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       FontWeight="SemiBold"
+                                       FontSize="12" />
+                            <TextBlock Text="{Binding CurrentTrackTitle}"
+                                       FontSize="15"
+                                       FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1"
+                                    Grid.Column="0"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Top">
+                            <Button Content="{DynamicResource ButtonPrev}" MinWidth="74" Command="{Binding PreviousCommand}" />
+                            <Button Content="{DynamicResource ButtonPlayPause}"
+                                    MinWidth="116"
+                                    Command="{Binding PlayPauseCommand}" />
+                            <Button Content="{DynamicResource ButtonStop}" MinWidth="74" Command="{Binding StopCommand}" />
+                            <Button Content="{DynamicResource ButtonNext}" MinWidth="74" Command="{Binding NextCommand}" />
+                        </StackPanel>
+
+                        <Grid Grid.Row="2"
+                              Grid.ColumnSpan="4"
+                              Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="128" />
+                            </Grid.ColumnDefinitions>
+                            <Slider Minimum="0"
+                                    Maximum="{Binding CurrentTrack.Duration.TotalSeconds}"
+                                    Value="{Binding PositionSeconds}" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding PositionText}"
+                                       Foreground="{DynamicResource MutedTextBrush}"
+                                       HorizontalAlignment="Right" />
+                        </Grid>
+
+                        <StackPanel Grid.RowSpan="2"
+                                    Grid.Column="2"
+                                    Margin="8,0,18,0"
+                                    VerticalAlignment="Center">
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{DynamicResource Volume}" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Volume}"
+                                           Foreground="{DynamicResource MutedTextBrush}" />
+                            </Grid>
+                            <Slider Minimum="0" Maximum="100" Value="{Binding Volume}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.RowSpan="2"
+                                    Grid.Column="3"
+                                    VerticalAlignment="Center">
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{DynamicResource Crossfade}" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding CrossfadeSeconds, StringFormat={}{0:0}s}"
+                                           Foreground="{DynamicResource MutedTextBrush}" />
+                            </Grid>
+                            <Slider Minimum="0" Maximum="15" Value="{Binding CrossfadeSeconds}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="2"
+                Background="{DynamicResource PanelBackgroundBrush}"
+                BorderBrush="{DynamicResource PanelBorderBrush}"
+                BorderThickness="0,1,0,0">
+            <DockPanel Margin="14,0">
+                <TextBlock Text="{Binding PlayerMessage}"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>
