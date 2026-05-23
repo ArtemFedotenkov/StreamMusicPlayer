@@ -10,6 +10,15 @@ The application can connect to OBS Studio through obs-websocket integration, but
 - Built with .NET and WPF
 - Requires OBS Studio with obs-websocket enabled if you want to use OBS event rules
 
+## Installation
+
+1. Open the latest release on the GitHub Releases page.
+2. Download the `StreamMusicPlayer-vX.X.X.zip` archive.
+3. Extract the archive to any folder on your Windows PC.
+4. Run `StreamMusicPlayer.exe`.
+
+Do not run the application directly from inside the zip archive. Extract it first so all required files and folders are available next to the executable.
+
 ## Purpose
 
 Stream Music Player was created to make stream music control simpler and more flexible. Instead of manually switching tracks or playlists during a stream, you can prepare playlists in advance and create rules that react to scene changes, stream state, or recording state.
@@ -85,6 +94,14 @@ The application name does not use the OBS name because this is an independent pr
 ## AI Assistance
 
 This project was created with the help of AI. The implementation, interface, localization, and feature iterations were developed collaboratively with AI assistance.
+
+## Security and Privacy
+
+Stream Music Player does not collect telemetry, analytics, personal data, OBS credentials, or streaming account information.
+
+All OBS communication is performed locally through obs-websocket on the user's machine.
+
+The application does not upload files or stream data to external servers.
 
 ## Author
 
