@@ -8,6 +8,9 @@
         WindowStartupLocation="CenterOwner"
         Icon="/iconka.ico"
         Background="{DynamicResource WindowBackgroundBrush}">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    </Window.Resources>
     <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
@@ -30,7 +33,6 @@
                     <RowDefinition Height="42" />
                     <RowDefinition Height="42" />
                     <RowDefinition Height="42" />
-                    <RowDefinition Height="42" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
@@ -47,39 +49,38 @@
                           SelectedValuePath="Value"
                           SelectedValue="{Binding PlayMode}" />
 
-                <TextBlock Grid.Row="2" Text="{DynamicResource ShuffleRepeatAll}" Foreground="{DynamicResource MutedTextBrush}" />
+                <TextBlock Grid.Row="2"
+                           Text="{DynamicResource ShuffleRepeatAll}"
+                           Visibility="{Binding ShowShuffle, Converter={StaticResource BooleanToVisibilityConverter}}"
+                           Foreground="{DynamicResource MutedTextBrush}" />
                 <CheckBox Grid.Row="2"
                           Grid.Column="1"
                           VerticalAlignment="Center"
-                          IsEnabled="{Binding CanShuffle}"
+                          Visibility="{Binding ShowShuffle, Converter={StaticResource BooleanToVisibilityConverter}}"
                           IsChecked="{Binding ShuffleEnabled}" />
 
-                <TextBlock Grid.Row="3" Text="{DynamicResource AfterPlaylistEnds}" Foreground="{DynamicResource MutedTextBrush}" />
+                <TextBlock Grid.Row="3"
+                           Text="{DynamicResource AfterPlaylistEnds}"
+                           Visibility="{Binding ShowCompletionSettings, Converter={StaticResource BooleanToVisibilityConverter}}"
+                           Foreground="{DynamicResource MutedTextBrush}" />
                 <ComboBox Grid.Row="3"
                           Grid.Column="1"
+                          Visibility="{Binding ShowCompletionSettings, Converter={StaticResource BooleanToVisibilityConverter}}"
                           ItemsSource="{Binding CompletionActions}"
                           DisplayMemberPath="DisplayName"
                           SelectedValuePath="Value"
                           SelectedValue="{Binding CompletionAction}" />
 
-                <TextBlock Grid.Row="4" Text="{DynamicResource SpecificPlaylist}" Foreground="{DynamicResource MutedTextBrush}" />
+                <TextBlock Grid.Row="4"
+                           Text="{DynamicResource SpecificPlaylist}"
+                           Visibility="{Binding ShowSpecificPlaylist, Converter={StaticResource BooleanToVisibilityConverter}}"
+                           Foreground="{DynamicResource MutedTextBrush}" />
                 <ComboBox Grid.Row="4"
                           Grid.Column="1"
+                          Visibility="{Binding ShowSpecificPlaylist, Converter={StaticResource BooleanToVisibilityConverter}}"
                           ItemsSource="{Binding Playlists}"
                           DisplayMemberPath="Name"
-                          IsEnabled="{Binding NeedsSpecificPlaylist}"
                           SelectedItem="{Binding CompletionPlaylist}" />
-
-                <TextBlock Grid.Row="5" Text="{DynamicResource DefaultCrossfade}" Foreground="{DynamicResource MutedTextBrush}" />
-                <TextBox Grid.Row="5"
-                         Grid.Column="1"
-                         Text="{Binding DefaultCrossfadeSeconds, UpdateSourceTrigger=PropertyChanged}" />
-
-                <TextBlock Grid.Row="6" Text="{DynamicResource DefaultVolume}" Foreground="{DynamicResource MutedTextBrush}" />
-                <TextBox Grid.Row="6"
-                         Grid.Column="1"
-                         VerticalAlignment="Top"
-                         Text="{Binding DefaultVolume, UpdateSourceTrigger=PropertyChanged}" />
             </Grid>
         </Border>
 

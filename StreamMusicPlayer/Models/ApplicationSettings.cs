@@ -7,4 +7,8 @@ public sealed class ApplicationSettings
     public AppLanguage Language { get; set; } = AppLanguage.English;
 
     public string AudioOutputDeviceId { get; set; } = AudioOutputDevice.DefaultId;
+
+    public int Volume { get; set; } = 100;
+
+    public double CrossfadeSeconds { get; set; } = 2;
 }

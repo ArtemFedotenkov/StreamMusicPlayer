@@ -211,15 +211,20 @@
                                     Command="{Binding OpenPlaylistRulesCommand}" />
                         </WrapPanel>
 
-                        <DataGrid Grid.Row="2"
+                        <DataGrid x:Name="TracksDataGrid"
+                                  Grid.Row="2"
                                   Margin="10,0,10,10"
                                   ItemsSource="{Binding SelectedPlaylist.Tracks}"
                                   SelectedItem="{Binding SelectedTrack}"
+                                  AllowDrop="True"
                                   AutoGenerateColumns="False"
                                   CanUserAddRows="False"
                                   IsReadOnly="True"
                                   GridLinesVisibility="Horizontal"
-                                  HeadersVisibility="Column">
+                                  HeadersVisibility="Column"
+                                  PreviewMouseLeftButtonDown="TracksDataGrid_PreviewMouseLeftButtonDown"
+                                  PreviewMouseMove="TracksDataGrid_PreviewMouseMove"
+                                  Drop="TracksDataGrid_Drop">
                             <DataGrid.InputBindings>
                                 <MouseBinding MouseAction="LeftDoubleClick"
                                               Command="{Binding PlaySelectedTrackCommand}" />
@@ -288,7 +293,9 @@
                             </Grid.ColumnDefinitions>
                             <Slider Minimum="0"
                                     Maximum="{Binding CurrentTrack.Duration.TotalSeconds}"
-                                    Value="{Binding PositionSeconds}" />
+                                    Value="{Binding PositionSeconds}"
+                                    PreviewMouseLeftButtonDown="PositionSlider_PreviewMouseLeftButtonDown"
+                                    PreviewMouseLeftButtonUp="PositionSlider_PreviewMouseLeftButtonUp" />
                             <TextBlock Grid.Column="1"
                                        Text="{Binding PositionText}"
                                        Foreground="{DynamicResource MutedTextBrush}"
@@ -322,10 +329,16 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="{DynamicResource Crossfade}" />
                                 <TextBlock Grid.Column="1"
-                                           Text="{Binding CrossfadeSeconds, StringFormat={}{0:0}s}"
+                                           Text="{Binding CrossfadeSeconds, StringFormat={}{0:0.0}s}"
                                            Foreground="{DynamicResource MutedTextBrush}" />
                             </Grid>
-                            <Slider Minimum="0" Maximum="15" Value="{Binding CrossfadeSeconds}" />
+                            <Slider Minimum="0"
+                                    Maximum="10"
+                                    SmallChange="0.1"
+                                    LargeChange="1"
+                                    TickFrequency="0.1"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding CrossfadeSeconds}" />
                         </StackPanel>
                     </Grid>
                 </Border>

@@ -27,8 +27,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string activeScene = LocalizationService.T("None");
     private string playerMessage = LocalizationService.T("Ready");
     private bool automaticTransitionPending;
+    private bool isPositionSeekPreview;
+    private bool playbackEndHandlingPending;
     private readonly PlaylistRepository playlistRepository;
     private readonly EventRuleRepository eventRuleRepository;
+    private readonly AutomationRuleRepository automationRuleRepository;
     private readonly AppSettingsRepository appSettingsRepository;
     private readonly AudioPlaybackService audioPlaybackService;
     private readonly ApplicationSettingsService applicationSettingsService;
@@ -37,8 +40,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly ObsSettingsService obsSettingsService;
     private readonly ObsClientService obsClientService;
     private readonly EventRulesEngine eventRulesEngine = new();
+    private readonly AutomationEngine automationEngine;
     private readonly DispatcherTimer positionTimer;
     private readonly Random random = new();
+    private readonly Dictionary<string, Queue<string>> shuffleQueues = [];
+    private readonly Dictionary<string, string> lastShuffleTrackIds = [];
 
     public MainViewModel()
     {
@@ -46,6 +52,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         new DatabaseInitializer(AppDataPaths.DatabasePath).Initialize();
         playlistRepository = new PlaylistRepository(AppDataPaths.DatabasePath);
         eventRuleRepository = new EventRuleRepository(AppDataPaths.DatabasePath);
+        automationRuleRepository = new AutomationRuleRepository(AppDataPaths.DatabasePath);
+        automationEngine = new AutomationEngine(automationRuleRepository);
         appSettingsRepository = new AppSettingsRepository(AppDataPaths.DatabasePath);
         applicationSettingsService = new ApplicationSettingsService(appSettingsRepository);
         audioOutputDeviceService = new AudioOutputDeviceService();
@@ -168,9 +176,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         get => volume;
         set
         {
-            if (SetProperty(ref volume, value))
+            var normalizedValue = Math.Clamp(value, 0, 100);
+            if (SetProperty(ref volume, normalizedValue))
             {
-                _ = audioPlaybackService.FadeVolumeToAsync(VolumeToFloat(value), CrossfadeSeconds);
+                _ = audioPlaybackService.FadeVolumeToAsync(VolumeToFloat(normalizedValue), CrossfadeSeconds);
+                SavePlaybackSettings();
             }
         }
     }
@@ -183,10 +193,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if (SetProperty(ref positionSeconds, value))
             {
                 OnPropertyChanged(nameof(PositionText));
-                if (CurrentTrack is not null && Math.Abs(audioPlaybackService.PositionSeconds - value) > 1)
-                {
-                    audioPlaybackService.PositionSeconds = value;
-                }
             }
         }
     }
@@ -194,7 +200,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public double CrossfadeSeconds
     {
         get => crossfadeSeconds;
-        set => SetProperty(ref crossfadeSeconds, value);
+        set
+        {
+            var normalizedValue = Math.Round(Math.Clamp(value, 0, 10), 2);
+            if (SetProperty(ref crossfadeSeconds, normalizedValue))
+            {
+                SavePlaybackSettings();
+            }
+        }
     }
 
     public string ObsStatus
@@ -404,6 +417,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         var trackIndex = SelectedPlaylist.Tracks.IndexOf(SelectedTrack);
         var wasCurrentTrack = CurrentTrack == SelectedTrack;
+        ResetShuffleQueue(SelectedPlaylist.Id);
         SelectedPlaylist.Tracks.Remove(SelectedTrack);
 
         for (var index = 0; index < SelectedPlaylist.Tracks.Count; index++)
@@ -425,6 +439,32 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedPlaylistTracksCountText));
     }
 
+    public void MoveTrack(Track track, int targetIndex)
+    {
+        if (SelectedPlaylist is null || !SelectedPlaylist.Tracks.Contains(track))
+        {
+            return;
+        }
+
+        var oldIndex = SelectedPlaylist.Tracks.IndexOf(track);
+        var newIndex = Math.Clamp(targetIndex, 0, SelectedPlaylist.Tracks.Count - 1);
+        if (oldIndex == newIndex)
+        {
+            return;
+        }
+
+        SelectedPlaylist.Tracks.Move(oldIndex, newIndex);
+        ResetShuffleQueue(SelectedPlaylist.Id);
+        for (var index = 0; index < SelectedPlaylist.Tracks.Count; index++)
+        {
+            SelectedPlaylist.Tracks[index].SortOrder = index + 1;
+        }
+
+        SelectedTrack = track;
+        SavePlaylists();
+        RaisePlaybackCommandStates();
+    }
+
     private void ClearSelectedPlaylist()
     {
         if (SelectedPlaylist is null || SelectedPlaylist.Tracks.Count == 0)
@@ -443,6 +483,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         var wasPlayingThisPlaylist = CurrentTrack is not null && SelectedPlaylist.Tracks.Contains(CurrentTrack);
+        ResetShuffleQueue(SelectedPlaylist.Id);
         SelectedPlaylist.Tracks.Clear();
         SelectedTrack = null;
         if (wasPlayingThisPlaylist)
@@ -498,12 +539,35 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         await PlayTrackAsync(SelectedTrack, CrossfadeSeconds);
     }
 
+    public async Task SeekToAsync(double seconds)
+    {
+        if (CurrentTrack is null)
+        {
+            isPositionSeekPreview = false;
+            return;
+        }
+
+        var targetSeconds = Math.Clamp(seconds, 0, CurrentTrack.Duration.TotalSeconds);
+        await audioPlaybackService.SeekAsync(targetSeconds, CrossfadeSeconds);
+        isPositionSeekPreview = false;
+        positionSeconds = audioPlaybackService.PositionSeconds;
+        OnPropertyChanged(nameof(PositionSeconds));
+        OnPropertyChanged(nameof(PositionText));
+        PlaybackState = audioPlaybackService.State;
+    }
+
+    public void BeginSeekPreview()
+    {
+        isPositionSeekPreview = true;
+    }
+
     private async Task TogglePlayPauseAsync()
     {
         if (PlaybackState == PlaybackState.Playing)
         {
             audioPlaybackService.Pause();
             PlaybackState = PlaybackState.Paused;
+            await ExecutePlayerAutomationAsync(AutomationEventTypes.Player.PlaybackPaused);
             return;
         }
 
@@ -511,6 +575,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             audioPlaybackService.Resume();
             PlaybackState = PlaybackState.Playing;
+            await ExecutePlayerAutomationAsync(AutomationEventTypes.Player.PlaybackResumed);
             return;
         }
 
@@ -521,13 +586,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    private async Task StopAsync()
+    private async Task StopAsync(bool raiseAutomationEvent = true)
     {
         await audioPlaybackService.StopAsync(1);
         PlaybackState = PlaybackState.Stopped;
         CurrentTrack = null;
         PositionSeconds = 0;
-            PlayerMessage = LocalizationService.T("Stopped");
+        PlayerMessage = LocalizationService.T("Stopped");
+        if (raiseAutomationEvent)
+        {
+            await ExecutePlayerAutomationAsync(AutomationEventTypes.Player.PlaybackStopped);
+        }
     }
 
     private async Task SelectOffsetTrackAsync(int offset)
@@ -580,9 +649,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         try
         {
             var scenes = obsClientService.IsConnected ? obsClientService.GetScenes() : [];
+            var sceneItems = obsClientService.IsConnected ? obsClientService.GetSceneItems() : [];
+            var sourceFilters = obsClientService.IsConnected ? obsClientService.GetSourceFilters() : [];
             var window = new EventRulesWindow
             {
-                DataContext = new EventRulesViewModel(new EventRuleRepository(AppDataPaths.DatabasePath), Playlists, scenes),
+                DataContext = new EventRulesViewModel(
+                    new AutomationRuleRepository(AppDataPaths.DatabasePath),
+                    new EventRuleRepository(AppDataPaths.DatabasePath),
+                    Playlists,
+                    scenes,
+                    sceneItems,
+                    sourceFilters),
                 Owner = App.Current.MainWindow
             };
             window.ShowDialog();
@@ -611,8 +688,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Owner = App.Current.MainWindow
         };
         window.ShowDialog();
-        CrossfadeSeconds = SelectedPlaylist.DefaultCrossfadeSeconds;
-        Volume = SelectedPlaylist.DefaultVolume;
     }
 
     private void OpenAppSettings()
@@ -632,8 +707,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void ApplyApplicationAudioSettings()
     {
         var settings = applicationSettingsService.Load();
+        volume = Math.Clamp(settings.Volume, 0, 100);
+        crossfadeSeconds = Math.Round(Math.Clamp(settings.CrossfadeSeconds, 0, 10), 2);
+        OnPropertyChanged(nameof(Volume));
+        OnPropertyChanged(nameof(CrossfadeSeconds));
         var device = audioOutputDeviceService.ResolveDevice(settings.AudioOutputDeviceId);
         audioPlaybackService.SetOutputDevice(device.DeviceNumber);
+    }
+
+    private void SavePlaybackSettings()
+    {
+        var settings = applicationSettingsService.Load();
+        settings.Volume = Volume;
+        settings.CrossfadeSeconds = CrossfadeSeconds;
+        applicationSettingsService.Save(settings);
     }
 
     private void RaisePlaybackCommandStates()
@@ -716,6 +803,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             added++;
         }
 
+        if (added > 0)
+        {
+            ResetShuffleQueue(SelectedPlaylist.Id);
+        }
+
         SelectedTrack ??= SelectedPlaylist.Tracks.FirstOrDefault();
         SavePlaylists();
         RaisePlaybackCommandStates();
@@ -773,12 +865,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    private async Task PlayPlaylistByNameAsync(string playlistName, double crossfadeSeconds)
+    private async Task PlayPlaylistByNameAsync(string playlistName)
     {
         var playlist = Playlists.FirstOrDefault(item => string.Equals(item.Name, playlistName, StringComparison.OrdinalIgnoreCase));
         if (playlist is null)
         {
             PlayerMessage = LocalizationService.F("RulePlaylistNotFoundFormat", playlistName);
+            return;
+        }
+
+        if (IsPlaylistPlaying(playlist))
+        {
             return;
         }
 
@@ -791,14 +888,66 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         SelectedTrack = track;
-        var transitionSeconds = crossfadeSeconds > 0 ? crossfadeSeconds : playlist.DefaultCrossfadeSeconds;
-        await PlayTrackAsync(track, transitionSeconds);
+        await PlayTrackAsync(track, CrossfadeSeconds);
+    }
+
+    private async Task PlayPlaylistByIdAsync(string playlistId)
+    {
+        var playlist = Playlists.FirstOrDefault(item => item.Id == playlistId);
+        if (playlist is null)
+        {
+            PlayerMessage = LocalizationService.T("TargetPlaylistNotFound");
+            return;
+        }
+
+        if (IsPlaylistPlaying(playlist))
+        {
+            return;
+        }
+
+        await PlayPlaylistAsync(playlist);
+    }
+
+    private async Task PlayTrackByIdAsync(string playlistId, string trackId)
+    {
+        var playlist = Playlists.FirstOrDefault(item => item.Id == playlistId)
+            ?? Playlists.FirstOrDefault(item => item.Tracks.Any(track => track.Id == trackId));
+        var track = playlist?.Tracks.FirstOrDefault(item => item.Id == trackId);
+        if (playlist is null || track is null)
+        {
+            PlayerMessage = LocalizationService.T("TargetPlaylistNotFound");
+            return;
+        }
+
+        if (IsTrackPlaying(track))
+        {
+            return;
+        }
+
+        SelectedPlaylist = playlist;
+        SelectedTrack = track;
+        await PlayTrackAsync(track, CrossfadeSeconds);
     }
 
     private void SyncPositionFromAudio()
     {
-        if (CurrentTrack is null || PlaybackState is PlaybackState.Stopped)
+        if (CurrentTrack is null)
         {
+            return;
+        }
+
+        if (isPositionSeekPreview)
+        {
+            return;
+        }
+
+        if (PlaybackState is PlaybackState.Stopped)
+        {
+            if (IsCurrentAudioAtEnd())
+            {
+                QueuePlaybackEndedHandling();
+            }
+
             return;
         }
 
@@ -806,6 +955,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PositionSeconds));
         OnPropertyChanged(nameof(PositionText));
         PlaybackState = audioPlaybackService.State;
+        if (IsCurrentAudioAtEnd())
+        {
+            QueuePlaybackEndedHandling();
+            return;
+        }
+
         TryStartAutomaticCrossfadeBeforeEnd();
     }
 
@@ -817,7 +972,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         var playlist = Playlists.FirstOrDefault(item => item.Tracks.Contains(CurrentTrack));
-        if (playlist is null || playlist.DefaultCrossfadeSeconds <= 0)
+        if (playlist is null || CrossfadeSeconds <= 0)
         {
             return;
         }
@@ -829,25 +984,55 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         var remainingSeconds = durationSeconds - audioPlaybackService.PositionSeconds;
-        var triggerSeconds = Math.Min(playlist.DefaultCrossfadeSeconds, Math.Max(0.25, durationSeconds / 2));
+        var triggerSeconds = Math.Min(CrossfadeSeconds, Math.Max(0.25, durationSeconds / 2));
         if (remainingSeconds > triggerSeconds)
         {
             return;
         }
 
-        var nextPlayback = ResolveNextPlaybackAfterEnd(playlist, CurrentTrack);
+        var endingTrack = CurrentTrack;
+        var nextPlayback = ResolveNextPlaybackAfterEnd(playlist, endingTrack);
         if (nextPlayback is null)
         {
             return;
         }
 
         automaticTransitionPending = true;
-        _ = PlayResolvedPlaybackAsync(nextPlayback.Value.Playlist, nextPlayback.Value.Track);
+        _ = HandleAutomaticTransitionAsync(playlist, endingTrack, nextPlayback.Value.Playlist, nextPlayback.Value.Track);
     }
 
     private void OnPlaybackEnded(object? sender, EventArgs eventArgs)
     {
-        App.Current.Dispatcher.Invoke(async () => await HandlePlaybackEndedAsync());
+        QueuePlaybackEndedHandling();
+    }
+
+    private void QueuePlaybackEndedHandling()
+    {
+        if (playbackEndHandlingPending)
+        {
+            return;
+        }
+
+        playbackEndHandlingPending = true;
+        App.Current.Dispatcher.Invoke(async () =>
+        {
+            try
+            {
+                await HandlePlaybackEndedAsync();
+            }
+            finally
+            {
+                playbackEndHandlingPending = false;
+            }
+        });
+    }
+
+    private bool IsCurrentAudioAtEnd()
+    {
+        var durationSeconds = audioPlaybackService.DurationSeconds;
+        return CurrentTrack is not null
+            && durationSeconds > 0
+            && audioPlaybackService.PositionSeconds >= durationSeconds - 0.05;
     }
 
     private async Task HandlePlaybackEndedAsync()
@@ -862,6 +1047,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (playlist is null)
         {
             await StopAsync();
+            return;
+        }
+
+        var finishedTrack = CurrentTrack;
+        await ExecutePlayerAutomationAsync(
+            AutomationEventTypes.Player.TrackFinished,
+            playlist.Id,
+            finishedTrack.Id);
+
+        if (CurrentTrack != finishedTrack)
+        {
             return;
         }
 
@@ -890,6 +1086,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         Playlist? targetPlaylist = playlist.CompletionAction switch
         {
+            PlaylistCompletionAction.PlayPreviousPlaylist => GetAdjacentPlaylist(playlist, -1),
             PlaylistCompletionAction.PlayNextPlaylist => GetAdjacentPlaylist(playlist, 1),
             PlaylistCompletionAction.PlaySpecificPlaylist => Playlists.FirstOrDefault(item => item.Id == playlist.CompletionPlaylistId),
             _ => null
@@ -909,9 +1106,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         SelectedPlaylist = playlist;
         SelectedTrack = track;
-        Volume = playlist.DefaultVolume;
-        CrossfadeSeconds = playlist.DefaultCrossfadeSeconds;
-        await PlayTrackAsync(track, playlist.DefaultCrossfadeSeconds);
+        await PlayTrackAsync(track, CrossfadeSeconds);
     }
 
     private Track? ResolveNextTrackAfterEnd(Playlist playlist, Track currentTrack)
@@ -932,10 +1127,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         if (playlist.PlayMode == PlayMode.RepeatAll && playlist.ShuffleEnabled)
         {
-            var candidates = playableTracks.Count > 1
-                ? playableTracks.Where(item => item != currentTrack).ToList()
-                : playableTracks;
-            return candidates[random.Next(candidates.Count)];
+            var shuffleCurrentIndex = playableTracks.IndexOf(currentTrack);
+            if (shuffleCurrentIndex >= 0 && shuffleCurrentIndex < playableTracks.Count - 1)
+            {
+                return playableTracks[shuffleCurrentIndex + 1];
+            }
+
+            return ShufflePlaylistForNextRepeatCycle(playlist, currentTrack);
         }
 
         var currentIndex = playableTracks.IndexOf(currentTrack);
@@ -952,8 +1150,135 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         return null;
     }
 
+    private Track? ShufflePlaylistForNextRepeatCycle(Playlist playlist, Track currentTrack)
+    {
+        if (playlist.Tracks.Count == 0)
+        {
+            return null;
+        }
+
+        var shuffledTracks = playlist.Tracks.ToList();
+        Shuffle(shuffledTracks);
+        var firstPlayableIndex = shuffledTracks.FindIndex(item => item.Enabled && File.Exists(item.FilePath));
+        if (shuffledTracks.Count > 1
+            && firstPlayableIndex >= 0
+            && shuffledTracks[firstPlayableIndex].Id == currentTrack.Id)
+        {
+            var swapIndex = shuffledTracks.FindIndex(1, item => item.Enabled && File.Exists(item.FilePath) && item.Id != currentTrack.Id);
+            if (swapIndex > 0)
+            {
+                (shuffledTracks[firstPlayableIndex], shuffledTracks[swapIndex]) = (shuffledTracks[swapIndex], shuffledTracks[firstPlayableIndex]);
+            }
+        }
+
+        for (var targetIndex = 0; targetIndex < shuffledTracks.Count; targetIndex++)
+        {
+            var currentIndex = playlist.Tracks.IndexOf(shuffledTracks[targetIndex]);
+            if (currentIndex >= 0 && currentIndex != targetIndex)
+            {
+                playlist.Tracks.Move(currentIndex, targetIndex);
+            }
+        }
+
+        for (var index = 0; index < playlist.Tracks.Count; index++)
+        {
+            playlist.Tracks[index].SortOrder = index + 1;
+        }
+
+        ResetShuffleQueue(playlist.Id);
+        SavePlaylists();
+        return playlist.Tracks
+            .Where(item => item.Enabled && File.Exists(item.FilePath))
+            .OrderBy(item => item.SortOrder)
+            .FirstOrDefault();
+    }
+
+    private Track? ResolveNextShuffleTrack(Playlist playlist, IReadOnlyList<Track> playableTracks, Track currentTrack)
+    {
+        if (playableTracks.Count == 0)
+        {
+            return null;
+        }
+
+        var hasExistingQueue = shuffleQueues.TryGetValue(playlist.Id, out var queue);
+        if (!hasExistingQueue || queue is null || queue.Count == 0)
+        {
+            queue = BuildShuffleQueue(playlist, playableTracks, currentTrack.Id, excludeCurrentTrack: !hasExistingQueue);
+            shuffleQueues[playlist.Id] = queue;
+        }
+
+        while (queue.Count > 0)
+        {
+            var trackId = queue.Dequeue();
+            var track = playableTracks.FirstOrDefault(item => item.Id == trackId);
+            if (track is null)
+            {
+                continue;
+            }
+
+            lastShuffleTrackIds[playlist.Id] = track.Id;
+            return track;
+        }
+
+        ResetShuffleQueue(playlist.Id);
+        return ResolveNextShuffleTrack(playlist, playableTracks, currentTrack);
+    }
+
+    private Queue<string> BuildShuffleQueue(
+        Playlist playlist,
+        IReadOnlyList<Track> playableTracks,
+        string currentTrackId,
+        bool excludeCurrentTrack)
+    {
+        var lastTrackId = lastShuffleTrackIds.TryGetValue(playlist.Id, out var rememberedTrackId)
+            ? rememberedTrackId
+            : currentTrackId;
+        var trackIds = playableTracks
+            .Where(item => !excludeCurrentTrack || item.Id != currentTrackId)
+            .Select(item => item.Id)
+            .ToList();
+        if (trackIds.Count == 0)
+        {
+            trackIds = playableTracks.Select(item => item.Id).ToList();
+        }
+
+        Shuffle(trackIds);
+
+        if (trackIds.Count > 1 && trackIds[0] == lastTrackId)
+        {
+            var swapIndex = trackIds.FindIndex(1, item => item != lastTrackId);
+            if (swapIndex > 0)
+            {
+                (trackIds[0], trackIds[swapIndex]) = (trackIds[swapIndex], trackIds[0]);
+            }
+        }
+
+        return new Queue<string>(trackIds);
+    }
+
+    private void Shuffle<T>(IList<T> items)
+    {
+        for (var index = items.Count - 1; index > 0; index--)
+        {
+            var swapIndex = random.Next(index + 1);
+            (items[index], items[swapIndex]) = (items[swapIndex], items[index]);
+        }
+    }
+
+    private void ResetShuffleQueue(string playlistId)
+    {
+        shuffleQueues.Remove(playlistId);
+    }
+
     private async Task HandlePlaylistCompletedAsync(Playlist playlist)
     {
+        await ExecutePlayerAutomationAsync(AutomationEventTypes.Player.PlaylistFinished, playlist.Id);
+
+        if (CurrentTrack is null || !playlist.Tracks.Contains(CurrentTrack))
+        {
+            return;
+        }
+
         if (playlist.PlayMode == PlayMode.StopAfterPlaylist)
         {
             await StopAsync();
@@ -963,6 +1288,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         switch (playlist.CompletionAction)
         {
+            case PlaylistCompletionAction.PlayPreviousPlaylist:
+                await PlayAdjacentPlaylistAsync(playlist, -1);
+                break;
             case PlaylistCompletionAction.PlayNextPlaylist:
                 await PlayAdjacentPlaylistAsync(playlist, 1);
                 break;
@@ -982,6 +1310,33 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             PlayerMessage = LocalizationService.F("PlaylistFinishedFormat", playlist.Name);
                 break;
         }
+    }
+
+    private async Task HandleAutomaticTransitionAsync(Playlist playlist, Track finishedTrack, Playlist nextPlaylist, Track nextTrack)
+    {
+        await ExecutePlayerAutomationAsync(
+            AutomationEventTypes.Player.TrackFinished,
+            playlist.Id,
+            finishedTrack.Id);
+
+        if (CurrentTrack != finishedTrack || PlaybackState == PlaybackState.Stopped)
+        {
+            automaticTransitionPending = false;
+            return;
+        }
+
+        var nextTrackInSamePlaylist = ResolveNextTrackAfterEnd(playlist, finishedTrack);
+        if (nextTrackInSamePlaylist is null && nextPlaylist != playlist)
+        {
+            await ExecutePlayerAutomationAsync(AutomationEventTypes.Player.PlaylistFinished, playlist.Id);
+            if (CurrentTrack != finishedTrack || PlaybackState == PlaybackState.Stopped)
+            {
+                automaticTransitionPending = false;
+                return;
+            }
+        }
+
+        await PlayResolvedPlaybackAsync(nextPlaylist, nextTrack);
     }
 
     private async Task PlayAdjacentPlaylistAsync(Playlist playlist, int offset)
@@ -1008,6 +1363,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private async Task PlayPlaylistAsync(Playlist playlist)
     {
+        if (IsPlaylistPlaying(playlist))
+        {
+            return;
+        }
+
         var track = playlist.Tracks
             .Where(item => item.Enabled && File.Exists(item.FilePath))
             .OrderBy(item => item.SortOrder)
@@ -1021,9 +1381,21 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         SelectedPlaylist = playlist;
         SelectedTrack = track;
-        Volume = playlist.DefaultVolume;
-        CrossfadeSeconds = playlist.DefaultCrossfadeSeconds;
-        await PlayTrackAsync(track, playlist.DefaultCrossfadeSeconds);
+        await PlayTrackAsync(track, CrossfadeSeconds);
+    }
+
+    private bool IsPlaylistPlaying(Playlist playlist)
+    {
+        return PlaybackState != PlaybackState.Stopped
+            && CurrentTrack is not null
+            && playlist.Tracks.Contains(CurrentTrack);
+    }
+
+    private bool IsTrackPlaying(Track track)
+    {
+        return PlaybackState != PlaybackState.Stopped
+            && CurrentTrack is not null
+            && CurrentTrack.Id == track.Id;
     }
 
     private async Task ConnectToObsOnStartupAsync(ObsConnectionSettings settings)
@@ -1076,8 +1448,161 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 ActiveScene = e.Condition;
             }
 
-            await ExecuteObsRuleAsync(e.TriggerType, e.Condition);
+            if (HasAutomationRules())
+            {
+                await ExecuteObsAutomationAsync(e);
+            }
+            else
+            {
+                await ExecuteObsRuleAsync(e.TriggerType, e.Condition);
+            }
         });
+    }
+
+    private bool HasAutomationRules()
+    {
+        return automationRuleRepository.LoadAll().Count > 0;
+    }
+
+    private async Task ExecuteObsAutomationAsync(ObsEventTriggeredEventArgs e)
+    {
+        var context = new AutomationEventContext
+        {
+            SourceType = AutomationSourceType.Obs,
+            EventType = e.TriggerType,
+            SceneName = e.Condition,
+            SourceName = e.SourceName,
+            SceneItemId = e.SceneItemId,
+            FilterName = e.FilterName,
+            FilterEnabled = e.FilterEnabled
+        };
+
+        await ExecuteAutomationAsync(context);
+    }
+
+    private async Task ExecutePlayerAutomationAsync(string eventType, string playlistId = "", string trackId = "")
+    {
+        var context = new AutomationEventContext
+        {
+            SourceType = AutomationSourceType.Player,
+            EventType = eventType,
+            PlaylistId = playlistId,
+            TrackId = trackId
+        };
+
+        await ExecuteAutomationAsync(context);
+    }
+
+    private async Task ExecuteAutomationAsync(AutomationEventContext context)
+    {
+        try
+        {
+            var executedActions = await automationEngine.ExecuteAsync(context, ExecuteAutomationActionAsync);
+            if (executedActions > 0)
+            {
+                PlayerMessage = LocalizationService.F("RuleExecutedFormat", $"{context.SourceType}: {context.EventType}");
+            }
+        }
+        catch (Exception exception)
+        {
+            PlayerMessage = exception.Message;
+        }
+    }
+
+    private async Task ExecuteAutomationActionAsync(AutomationRule rule, AutomationAction action)
+    {
+        var settings = automationEngine.ReadActionSettings(action);
+        switch (action.TargetType)
+        {
+            case AutomationTargetType.Obs:
+                ExecuteObsAutomationAction(action.ActionType, settings);
+                break;
+            case AutomationTargetType.Player:
+                await ExecutePlayerAutomationActionAsync(action.ActionType, settings);
+                break;
+        }
+    }
+
+    private void ExecuteObsAutomationAction(string actionType, AutomationActionSettings settings)
+    {
+        switch (actionType)
+        {
+            case AutomationActionTypes.Obs.ChangeScene:
+                obsClientService.SetCurrentScene(settings.SceneName);
+                break;
+            case AutomationActionTypes.Obs.StartStream:
+                obsClientService.StartStream();
+                break;
+            case AutomationActionTypes.Obs.StopStream:
+                obsClientService.StopStream();
+                break;
+            case AutomationActionTypes.Obs.StartRecording:
+                obsClientService.StartRecording();
+                break;
+            case AutomationActionTypes.Obs.StopRecording:
+                obsClientService.StopRecording();
+                break;
+            case AutomationActionTypes.Obs.PauseRecording:
+                obsClientService.PauseRecording();
+                break;
+            case AutomationActionTypes.Obs.ResumeRecording:
+                obsClientService.ResumeRecording();
+                break;
+            case AutomationActionTypes.Obs.SetSceneItemEnabled:
+                obsClientService.SetSceneItemEnabled(settings.SceneName, settings.SceneItemId, settings.FilterEnabled);
+                break;
+            case AutomationActionTypes.Obs.SetSourceFilterEnabled:
+                obsClientService.SetSourceFilterEnabled(settings.SourceName, settings.FilterName, settings.FilterEnabled);
+                break;
+            default:
+                PlayerMessage = LocalizationService.F("UnsupportedRuleActionFormat", actionType);
+                break;
+        }
+    }
+
+    private async Task ExecutePlayerAutomationActionAsync(string actionType, AutomationActionSettings settings)
+    {
+        switch (actionType)
+        {
+            case AutomationActionTypes.Player.PlayPlaylist:
+                await PlayPlaylistByIdAsync(settings.PlaylistId);
+                break;
+            case AutomationActionTypes.Player.PlayTrack:
+                await PlayTrackByIdAsync(settings.PlaylistId, settings.TrackId);
+                break;
+            case AutomationActionTypes.Player.PlayNextPlaylist:
+                if (SelectedPlaylist is not null)
+                {
+                    await PlayAdjacentPlaylistAsync(SelectedPlaylist, 1);
+                }
+                break;
+            case AutomationActionTypes.Player.PlayPreviousPlaylist:
+                if (SelectedPlaylist is not null)
+                {
+                    await PlayAdjacentPlaylistAsync(SelectedPlaylist, -1);
+                }
+                break;
+            case AutomationActionTypes.Player.Stop:
+                await StopAsync(false);
+                break;
+            case AutomationActionTypes.Player.Pause:
+                audioPlaybackService.Pause();
+                PlaybackState = PlaybackState.Paused;
+                break;
+            case AutomationActionTypes.Player.Resume:
+                audioPlaybackService.Resume();
+                PlaybackState = PlaybackState.Playing;
+                break;
+            case AutomationActionTypes.Player.SetVolume:
+                Volume = Math.Clamp(settings.Volume, 0, 100);
+                break;
+            case AutomationActionTypes.Player.SetCrossfade:
+                CrossfadeSeconds = Math.Round(Math.Clamp(settings.CrossfadeSeconds, 0, 10), 2);
+                break;
+            default:
+                PlayerMessage = LocalizationService.F("UnsupportedRuleActionFormat", actionType);
+                break;
+        }
     }
 
     private async Task ExecuteObsRuleAsync(string triggerType, string condition)
@@ -1101,7 +1626,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         switch (rule.ActionType)
         {
             case "PlayPlaylist":
-                await PlayPlaylistByNameAsync(actionParameters.PlaylistName, actionParameters.CrossfadeSeconds);
+                await PlayPlaylistByNameAsync(actionParameters.PlaylistName);
                 PlayerMessage = LocalizationService.F("RuleExecutedFormat", rule.Name);
                 break;
             case "Stop":

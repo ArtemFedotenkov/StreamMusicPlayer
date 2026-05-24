@@ -62,6 +62,36 @@ public sealed class DatabaseInitializer
                 UpdatedAt TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS AutomationRules (
+                Id TEXT PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Enabled INTEGER NOT NULL,
+                Priority INTEGER NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS AutomationEvents (
+                Id TEXT PRIMARY KEY,
+                RuleId TEXT NOT NULL,
+                SourceType TEXT NOT NULL,
+                EventType TEXT NOT NULL,
+                SettingsJson TEXT NOT NULL,
+                SortOrder INTEGER NOT NULL,
+                FOREIGN KEY (RuleId) REFERENCES AutomationRules(Id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS AutomationActions (
+                Id TEXT PRIMARY KEY,
+                RuleId TEXT NOT NULL,
+                TargetType TEXT NOT NULL,
+                ActionType TEXT NOT NULL,
+                SettingsJson TEXT NOT NULL,
+                Enabled INTEGER NOT NULL,
+                SortOrder INTEGER NOT NULL,
+                FOREIGN KEY (RuleId) REFERENCES AutomationRules(Id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS AppSettings (
                 Key TEXT PRIMARY KEY,
                 Value TEXT NOT NULL

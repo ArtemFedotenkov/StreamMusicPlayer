@@ -104,12 +104,10 @@ public sealed class AppSettingsViewModel : ObservableObject
 
     private void Save()
     {
-        var settings = new ApplicationSettings
-        {
-            Theme = SelectedTheme.Value,
-            Language = SelectedLanguage.Value,
-            AudioOutputDeviceId = SelectedAudioDevice.Id
-        };
+        var settings = applicationSettingsService.Load();
+        settings.Theme = SelectedTheme.Value;
+        settings.Language = SelectedLanguage.Value;
+        settings.AudioOutputDeviceId = SelectedAudioDevice.Id;
 
         applicationSettingsService.Save(settings);
         ThemeService.Apply(settings.Theme);

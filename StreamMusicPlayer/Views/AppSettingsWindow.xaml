@@ -30,8 +30,9 @@
                     <RowDefinition Height="46" />
                     <RowDefinition Height="92" />
                     <RowDefinition Height="64" />
-                    <RowDefinition Height="124" />
+                    <RowDefinition Height="92" />
                     <RowDefinition Height="48" />
+                    <RowDefinition Height="32" />
                 </Grid.RowDefinitions>
 
                 <TextBlock Text="{DynamicResource ColorPalette}" Foreground="{DynamicResource MutedTextBrush}" />
@@ -78,15 +79,21 @@
                 <StackPanel Grid.Row="5"
                             Grid.ColumnSpan="2"
                             VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
                             Margin="0,8,0,8">
-                    <TextBlock TextWrapping="Wrap">
+                    <TextBlock TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               HorizontalAlignment="Center">
                         <Run Text="{DynamicResource AuthorDonateText}" />
                         <Hyperlink NavigateUri="https://destream.net/live/FEDOT/donate"
                                    RequestNavigate="Link_RequestNavigate">
                             <Run Text="{DynamicResource DonateLinkText}" />
                         </Hyperlink>
                     </TextBlock>
-                    <TextBlock Margin="0,6,0,0" TextWrapping="Wrap">
+                    <TextBlock Margin="0,6,0,0"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               HorizontalAlignment="Center">
                         <Run Text="{DynamicResource AuthorYoutubeText}" />
                         <Hyperlink NavigateUri="https://www.youtube.com/channel/UCAPMkkZzlYhVX4Rn5hRCW9g"
                                    RequestNavigate="Link_RequestNavigate">
@@ -96,6 +103,14 @@
                 </StackPanel>
 
                 <TextBlock Grid.Row="6"
+                           Grid.ColumnSpan="2"
+                           Text="{DynamicResource AppVersionText}"
+                           TextAlignment="Center"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource MutedTextBrush}" />
+
+                <TextBlock Grid.Row="7"
                            Grid.ColumnSpan="2"
                            Text="{Binding StatusMessage}"
                            Foreground="{DynamicResource MutedTextBrush}"

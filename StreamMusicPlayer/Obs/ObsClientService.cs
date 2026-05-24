@@ -23,6 +23,8 @@ public sealed class ObsClientService : IDisposable
         client.CurrentProgramSceneChanged += OnCurrentProgramSceneChanged;
         client.StreamStateChanged += OnStreamStateChanged;
         client.RecordStateChanged += OnRecordStateChanged;
+        client.SceneItemEnableStateChanged += OnSceneItemEnableStateChanged;
+        client.SourceFilterEnableStateChanged += OnSourceFilterEnableStateChanged;
     }
 
     public event EventHandler? Connected;
@@ -128,6 +130,101 @@ public sealed class ObsClientService : IDisposable
             .ToList() ?? [];
     }
 
+    public IReadOnlyList<string> GetInputs()
+    {
+        if (!client.IsConnected)
+        {
+            return [];
+        }
+
+        var response = client.SendRequest("GetInputList");
+        return response["inputs"]?
+            .OfType<JObject>()
+            .Select(input => input["inputName"]?.ToString())
+            .Where(inputName => !string.IsNullOrWhiteSpace(inputName))
+            .Select(inputName => inputName!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(inputName => inputName)
+            .ToList() ?? [];
+    }
+
+    public IReadOnlyList<ObsSceneItemInfo> GetSceneItems()
+    {
+        var sceneItems = new List<ObsSceneItemInfo>();
+        foreach (var sceneName in GetScenes())
+        {
+            try
+            {
+                var response = client.SendRequest("GetSceneItemList", new JObject
+                {
+                    ["sceneName"] = sceneName
+                });
+
+                var items = response["sceneItems"]?
+                    .OfType<JObject>()
+                    .Select(item => new ObsSceneItemInfo
+                    {
+                        SceneName = sceneName,
+                        SourceName = item["sourceName"]?.ToString() ?? string.Empty,
+                        SceneItemId = item["sceneItemId"]?.Value<int>() ?? 0
+                    })
+                    .Where(item => !string.IsNullOrWhiteSpace(item.SourceName) && item.SceneItemId > 0) ?? [];
+                sceneItems.AddRange(items);
+            }
+            catch
+            {
+                // Skip scenes that cannot expose scene items through websocket.
+            }
+        }
+
+        return sceneItems
+            .OrderBy(item => item.SceneName)
+            .ThenBy(item => item.SourceName)
+            .ThenBy(item => item.SceneItemId)
+            .ToList();
+    }
+
+    public IReadOnlyList<ObsSourceFilterInfo> GetSourceFilters()
+    {
+        var filters = new List<ObsSourceFilterInfo>();
+        var sourceNames = GetScenes()
+            .Concat(GetInputs())
+            .Where(sourceName => !string.IsNullOrWhiteSpace(sourceName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(sourceName => sourceName);
+
+        foreach (var sourceName in sourceNames)
+        {
+            try
+            {
+                var response = client.SendRequest("GetSourceFilterList", new JObject
+                {
+                    ["sourceName"] = sourceName
+                });
+
+                var sourceFilters = response["filters"]?
+                    .OfType<JObject>()
+                    .Select(filter => filter["filterName"]?.ToString())
+                    .Where(filterName => !string.IsNullOrWhiteSpace(filterName))
+                    .Select(filterName => new ObsSourceFilterInfo
+                    {
+                        SourceName = sourceName,
+                        FilterName = filterName!
+                    }) ?? [];
+                filters.AddRange(sourceFilters);
+            }
+            catch
+            {
+                // Some OBS sources may not expose filters through websocket; skip them.
+            }
+        }
+
+        return filters
+            .OrderBy(filter => filter.SourceName)
+            .ThenBy(filter => filter.FilterName)
+            .ToList();
+    }
+
     public string GetCurrentScene()
     {
         if (!client.IsConnected)
@@ -137,6 +234,79 @@ public sealed class ObsClientService : IDisposable
 
         var response = client.SendRequest("GetCurrentProgramScene");
         return response["currentProgramSceneName"]?.ToString() ?? string.Empty;
+    }
+
+    public void SetCurrentScene(string sceneName)
+    {
+        if (!client.IsConnected || string.IsNullOrWhiteSpace(sceneName))
+        {
+            return;
+        }
+
+        client.SendRequest("SetCurrentProgramScene", new JObject
+        {
+            ["sceneName"] = sceneName
+        });
+    }
+
+    public void StartStream()
+    {
+        SendObsCommand("StartStream");
+    }
+
+    public void StopStream()
+    {
+        SendObsCommand("StopStream");
+    }
+
+    public void StartRecording()
+    {
+        SendObsCommand("StartRecord");
+    }
+
+    public void StopRecording()
+    {
+        SendObsCommand("StopRecord");
+    }
+
+    public void PauseRecording()
+    {
+        SendObsCommand("PauseRecord");
+    }
+
+    public void ResumeRecording()
+    {
+        SendObsCommand("ResumeRecord");
+    }
+
+    public void SetSourceFilterEnabled(string sourceName, string filterName, bool enabled)
+    {
+        if (!client.IsConnected || string.IsNullOrWhiteSpace(sourceName) || string.IsNullOrWhiteSpace(filterName))
+        {
+            return;
+        }
+
+        client.SendRequest("SetSourceFilterEnabled", new JObject
+        {
+            ["sourceName"] = sourceName,
+            ["filterName"] = filterName,
+            ["filterEnabled"] = enabled
+        });
+    }
+
+    public void SetSceneItemEnabled(string sceneName, int sceneItemId, bool enabled)
+    {
+        if (!client.IsConnected || string.IsNullOrWhiteSpace(sceneName) || sceneItemId <= 0)
+        {
+            return;
+        }
+
+        client.SendRequest("SetSceneItemEnabled", new JObject
+        {
+            ["sceneName"] = sceneName,
+            ["sceneItemId"] = sceneItemId,
+            ["sceneItemEnabled"] = enabled
+        });
     }
 
     public ObsConnectionInfo GetConnectionInfo(string statusMessage)
@@ -192,6 +362,8 @@ public sealed class ObsClientService : IDisposable
         client.CurrentProgramSceneChanged -= OnCurrentProgramSceneChanged;
         client.StreamStateChanged -= OnStreamStateChanged;
         client.RecordStateChanged -= OnRecordStateChanged;
+        client.SceneItemEnableStateChanged -= OnSceneItemEnableStateChanged;
+        client.SourceFilterEnableStateChanged -= OnSourceFilterEnableStateChanged;
         Disconnect();
         reconnectCancellation.Dispose();
         connectionLock.Dispose();
@@ -265,6 +437,16 @@ public sealed class ObsClientService : IDisposable
         reconnectCancellation = new CancellationTokenSource();
     }
 
+    private void SendObsCommand(string requestType)
+    {
+        if (!client.IsConnected)
+        {
+            return;
+        }
+
+        client.SendRequest(requestType);
+    }
+
     private void OnCurrentProgramSceneChanged(object? sender, EventArgs e)
     {
         var sceneName = e.GetType().GetProperty("SceneName")?.GetValue(e)?.ToString() ?? string.Empty;
@@ -304,6 +486,61 @@ public sealed class ObsClientService : IDisposable
         if (!string.IsNullOrWhiteSpace(triggerType))
         {
             ObsEventTriggered?.Invoke(this, new ObsEventTriggeredEventArgs(triggerType));
+        }
+    }
+
+    private void OnSceneItemEnableStateChanged(object? sender, SceneItemEnableStateChangedEventArgs e)
+    {
+        var triggerType = e.SceneItemEnabled
+            ? AutomationEventTypes.Obs.SceneItemEnabled
+            : AutomationEventTypes.Obs.SceneItemDisabled;
+        var sourceName = ResolveSceneItemSourceName(e.SceneName, e.SceneItemId);
+        ObsEventTriggered?.Invoke(
+            this,
+            new ObsEventTriggeredEventArgs(
+                triggerType,
+                condition: e.SceneName,
+                sourceName: sourceName,
+                sceneItemId: e.SceneItemId,
+                filterEnabled: e.SceneItemEnabled));
+    }
+
+    private void OnSourceFilterEnableStateChanged(object? sender, SourceFilterEnableStateChangedEventArgs e)
+    {
+        var triggerType = e.FilterEnabled
+            ? AutomationEventTypes.Obs.SourceFilterEnabled
+            : AutomationEventTypes.Obs.SourceFilterDisabled;
+        ObsEventTriggered?.Invoke(
+            this,
+            new ObsEventTriggeredEventArgs(
+                triggerType,
+                sourceName: e.SourceName,
+                filterName: e.FilterName,
+                filterEnabled: e.FilterEnabled));
+    }
+
+    private string ResolveSceneItemSourceName(string sceneName, int sceneItemId)
+    {
+        if (string.IsNullOrWhiteSpace(sceneName) || sceneItemId <= 0)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var response = client.SendRequest("GetSceneItemList", new JObject
+            {
+                ["sceneName"] = sceneName
+            });
+
+            return response["sceneItems"]?
+                .OfType<JObject>()
+                .FirstOrDefault(item => item["sceneItemId"]?.Value<int>() == sceneItemId)?["sourceName"]
+                ?.ToString() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
         }
     }
 }

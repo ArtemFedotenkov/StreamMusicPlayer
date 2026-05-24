@@ -15,8 +15,10 @@ public sealed class AudioPlaybackService : IDisposable
     private CancellationTokenSource volumeCancellation = new();
     private WaveOutEvent? output;
     private MixingSampleProvider? mixer;
+    private VolumeSampleProvider? masterVolumeProvider;
     private AudioFileReader? reader;
     private VolumeSampleProvider? activeInput;
+    private float masterVolume = 1;
     private int outputDeviceNumber = -1;
     private bool disposed;
     private bool suppressEndNotification;
@@ -51,12 +53,13 @@ public sealed class AudioPlaybackService : IDisposable
 
     public float Volume
     {
-        get => activeInput?.Volume ?? 0;
+        get => masterVolume;
         set
         {
-            if (activeInput is not null)
+            masterVolume = Math.Clamp(value, 0, 1);
+            if (masterVolumeProvider is not null)
             {
-                activeInput.Volume = Math.Clamp(value, 0, 1);
+                masterVolumeProvider.Volume = masterVolume;
             }
         }
     }
@@ -70,7 +73,6 @@ public sealed class AudioPlaybackService : IDisposable
         try
         {
             CancelTransition();
-            CancelVolumeFade();
             var cancellationToken = transitionCancellation.Token;
 
             var newReader = new AudioFileReader(track.FilePath);
@@ -100,12 +102,12 @@ public sealed class AudioPlaybackService : IDisposable
                 }
 
                 DisposeCurrentPlayback();
-                StartDirect(track, volume: fadeInSeconds > 0 ? 0 : volume);
+                StartDirect(track, inputVolume: fadeInSeconds > 0 ? 0 : 1);
 
                 if (fadeInSeconds > 0)
                 {
                     State = AppPlaybackState.Fading;
-                    await FadeInputAsync(activeInput, 0, volume, fadeInSeconds, cancellationToken);
+                    await FadeInputAsync(activeInput, 0, 1, fadeInSeconds, cancellationToken);
                 }
 
                 State = AppPlaybackState.Playing;
@@ -131,15 +133,14 @@ public sealed class AudioPlaybackService : IDisposable
 
                 oldReader?.Dispose();
                 State = AppPlaybackState.Playing;
-                var targetVolume = Math.Clamp(volume, 0, 1);
                 if (fadeInSeconds > 0)
                 {
                     State = AppPlaybackState.Fading;
-                    await FadeInputAsync(newInput, 0, targetVolume, fadeInSeconds, cancellationToken);
+                    await FadeInputAsync(newInput, 0, 1, fadeInSeconds, cancellationToken);
                 }
                 else
                 {
-                    newInput.Volume = targetVolume;
+                    newInput.Volume = 1;
                 }
 
                 State = AppPlaybackState.Playing;
@@ -148,7 +149,7 @@ public sealed class AudioPlaybackService : IDisposable
             }
 
             State = AppPlaybackState.Switching;
-            await CrossfadeAsync(oldInput, newInput, oldInput.Volume, volume, crossfadeSeconds, cancellationToken);
+            await CrossfadeAsync(oldInput, newInput, oldInput.Volume, 1, crossfadeSeconds, cancellationToken);
             mixer.RemoveMixerInput(oldInput);
             oldReader.Dispose();
             State = AppPlaybackState.Playing;
@@ -156,6 +157,7 @@ public sealed class AudioPlaybackService : IDisposable
         }
         finally
         {
+            suppressEndNotification = false;
             transitionLock.Release();
         }
     }
@@ -206,6 +208,71 @@ public sealed class AudioPlaybackService : IDisposable
         Volume = volume;
     }
 
+    public async Task SeekAsync(double seconds, double fadeSeconds)
+    {
+        if (reader is null || CurrentTrack is null)
+        {
+            return;
+        }
+
+        await transitionLock.WaitAsync();
+        try
+        {
+            CancelTransition();
+            var cancellationToken = transitionCancellation.Token;
+            var targetSeconds = Math.Clamp(seconds, 0, reader.TotalTime.TotalSeconds);
+            var seekFadeSeconds = Math.Clamp(fadeSeconds, 0, 10);
+            if (activeInput is null || mixer is null || output is null || State != AppPlaybackState.Playing || seekFadeSeconds <= 0)
+            {
+                reader.CurrentTime = TimeSpan.FromSeconds(targetSeconds);
+                return;
+            }
+
+            var oldReader = reader;
+            var oldInput = activeInput;
+            var track = CurrentTrack;
+            var newReader = new AudioFileReader(track.FilePath)
+            {
+                CurrentTime = TimeSpan.FromSeconds(targetSeconds)
+            };
+            var newInput = new VolumeSampleProvider(newReader) { Volume = 0 };
+
+            try
+            {
+                suppressEndNotification = true;
+                mixer.AddMixerInput(newInput);
+
+                // Give the new decoder a tiny moment to buffer before blending positions.
+                await Task.Delay(60, cancellationToken);
+
+                reader = newReader;
+                activeInput = newInput;
+                State = AppPlaybackState.Switching;
+                await CrossfadeAsync(oldInput, newInput, oldInput.Volume, 1, seekFadeSeconds, cancellationToken);
+                mixer.RemoveMixerInput(oldInput);
+                oldReader.Dispose();
+                State = AppPlaybackState.Playing;
+                suppressEndNotification = false;
+            }
+            catch
+            {
+                mixer.RemoveMixerInput(newInput);
+                newReader.Dispose();
+                suppressEndNotification = false;
+                throw;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer transition superseded this seek.
+            suppressEndNotification = false;
+        }
+        finally
+        {
+            transitionLock.Release();
+        }
+    }
+
     public void SetOutputDevice(int deviceNumber)
     {
         if (outputDeviceNumber == deviceNumber)
@@ -231,13 +298,13 @@ public sealed class AudioPlaybackService : IDisposable
             var cancellationToken = volumeCancellation.Token;
             var targetVolume = Math.Clamp(volume, 0, 1);
 
-            if (activeInput is null || seconds <= 0)
+            if (masterVolumeProvider is null || seconds <= 0)
             {
                 Volume = targetVolume;
                 return;
             }
 
-            await FadeInputAsync(activeInput, activeInput.Volume, targetVolume, seconds, cancellationToken);
+            await FadeMasterVolumeAsync(masterVolumeProvider.Volume, targetVolume, seconds, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -263,6 +330,7 @@ public sealed class AudioPlaybackService : IDisposable
         volumeCancellation.Dispose();
         endTimer.Dispose();
         DisposeCurrentPlayback();
+        masterVolumeProvider = null;
         output?.Dispose();
         transitionLock.Dispose();
         volumeLock.Dispose();
@@ -272,12 +340,13 @@ public sealed class AudioPlaybackService : IDisposable
     {
         DisposeOutput();
         mixer = new MixingSampleProvider(waveFormat) { ReadFully = true };
+        masterVolumeProvider = new VolumeSampleProvider(mixer) { Volume = masterVolume };
         RestartOutput();
     }
 
     private void RestartOutput()
     {
-        if (mixer is null)
+        if (masterVolumeProvider is null)
         {
             return;
         }
@@ -285,10 +354,11 @@ public sealed class AudioPlaybackService : IDisposable
         DisposeOutput();
         output = new WaveOutEvent
         {
-            DesiredLatency = 120,
+            DesiredLatency = 300,
+            NumberOfBuffers = 3,
             DeviceNumber = outputDeviceNumber
         };
-        output.Init(mixer);
+        output.Init(masterVolumeProvider);
         output.Play();
     }
 
@@ -299,11 +369,11 @@ public sealed class AudioPlaybackService : IDisposable
         output = null;
     }
 
-    private void StartDirect(Track track, float volume)
+    private void StartDirect(Track track, float inputVolume)
     {
         var newReader = new AudioFileReader(track.FilePath);
         StartMixer(newReader.WaveFormat);
-        var input = new VolumeSampleProvider(newReader) { Volume = Math.Clamp(volume, 0, 1) };
+        var input = new VolumeSampleProvider(newReader) { Volume = Math.Clamp(inputVolume, 0, 1) };
         mixer?.AddMixerInput(input);
         reader = newReader;
         activeInput = input;
@@ -351,6 +421,25 @@ public sealed class AudioPlaybackService : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             var progress = step / (float)steps;
             targetInput.Volume = from + ((to - from) * progress);
+            await Task.Delay(delay, cancellationToken);
+        }
+    }
+
+    private async Task FadeMasterVolumeAsync(float from, float to, double seconds, CancellationToken cancellationToken)
+    {
+        if (masterVolumeProvider is null)
+        {
+            Volume = to;
+            return;
+        }
+
+        var steps = Math.Max(1, (int)(seconds * 60));
+        var delay = TimeSpan.FromMilliseconds(Math.Max(10, seconds * 1000 / steps));
+        for (var step = 0; step <= steps; step++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var progress = step / (float)steps;
+            Volume = from + ((to - from) * progress);
             await Task.Delay(delay, cancellationToken);
         }
     }

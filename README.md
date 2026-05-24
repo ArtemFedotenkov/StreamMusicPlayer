@@ -1,99 +1,104 @@
 # Stream Music Player
 
-Stream Music Player is a free Windows desktop application for personal use. It is designed to help streamers and content creators manage background music playlists and automate music behavior during live streams, recordings, and scene-based workflows.
+Stream Music Player is a free Windows desktop music player for personal use by streamers and creators. It is designed to manage local music playlists and automate playback based on events from OBS Studio through obs-websocket.
 
-The application can connect to OBS Studio through obs-websocket integration, but it is an independent tool and is not affiliated with OBS Project.
-
-## Platform
-
-- Windows only
-- Built with .NET and WPF
-- Requires OBS Studio with obs-websocket enabled if you want to use OBS event rules
+The project was created with the help of AI and is shared with the community as a personal-use tool.
 
 ## Installation
 
-1. Open the latest release on the GitHub Releases page.
-2. Download the `StreamMusicPlayer-vX.X.X.zip` archive.
-3. Extract the archive to any folder on your Windows PC.
-4. Run `StreamMusicPlayer.exe`.
+1. Download the latest release archive from the GitHub Releases page.
+2. Extract the archive to any folder on your Windows PC.
+3. Run `StreamMusicPlayer.exe`.
+4. If you want OBS integration, open OBS Studio and make sure the WebSocket server is enabled.
+5. In Stream Music Player, open OBS settings and enter your local WebSocket connection settings.
 
-Do not run the application directly from inside the zip archive. Extract it first so all required files and folders are available next to the executable.
-
-## Purpose
-
-Stream Music Player was created to make stream music control simpler and more flexible. Instead of manually switching tracks or playlists during a stream, you can prepare playlists in advance and create rules that react to scene changes, stream state, or recording state.
-
-It is especially useful for:
-
-- streamers who use different music for starting, ending, intermission, or gameplay scenes;
-- creators who record videos and want separate music behavior while recording;
-- users who want a dedicated music player with playlist rules, crossfade, and output device selection;
-- anyone who wants lightweight music automation without a complex media setup.
+The application is portable in the sense that the program files can be placed anywhere, but user data is stored in the Windows user profile.
 
 ## Main Features
 
-- Create, rename, remove, and reorder playlists
-- Add individual audio files or entire folders
-- Clear playlists or remove selected tracks
-- Play, pause, stop, previous, and next controls
-- Track seek bar
-- Volume control
-- Crossfade between tracks
-- Smooth volume fading
-- Select an audio output device
-- Playlist behavior rules:
-  - stop after playlist
-  - play sequentially
-  - repeat one track
-  - repeat the whole playlist
-  - shuffle during repeat-all
-  - play next playlist after completion
-  - play a specific playlist after completion
-- OBS integration through obs-websocket:
-  - auto-connect on startup
-  - auto-reconnect
-  - manual connect/disconnect
-  - refresh scene list
-- OBS event rules:
-  - scene changed
-  - stream started
-  - stream stopped
-  - recording started
-  - recording stopped
-  - recording paused
-  - recording resumed
-- Event actions:
-  - play playlist
-  - stop playback
-  - pause playback
-  - resume playback
-  - set volume
-- Themes:
-  - standard light
-  - standard dark
-  - cyberpunk
-  - olive
-  - midnight blue
-  - dark red
+- Local playlist management for music files.
+- Add audio files or whole folders.
+- Rename, add, remove, clear, and reorder playlists.
+- Reorder tracks by dragging them in the playlist table.
+- Play, pause, stop, previous, next, and seek inside a track.
+- Smooth crossfade between tracks.
+- Smooth crossfade-style seeking inside the current track.
+- Global volume and crossfade settings saved between launches.
+- Configurable playlist behavior:
+  - play in order;
+  - repeat one track;
+  - repeat the whole playlist;
+  - shuffle repeat by reshuffling the playlist order between repeat cycles;
+  - stop after the playlist;
+  - switch to previous, next, or a selected playlist after completion.
+- Modular event rules editor:
+  - create multiple rules;
+  - add one or more events per rule;
+  - add one or more actions per rule;
+  - reorder actions by dragging them.
+- OBS event triggers:
+  - scene changed;
+  - stream started/stopped;
+  - recording started/stopped/paused/resumed;
+  - scene source enabled/disabled;
+  - source filter enabled/disabled.
+- Player event triggers:
+  - playlist finished;
+  - track finished;
+  - playback stopped;
+  - playback paused;
+  - playback resumed.
+- OBS actions:
+  - change scene;
+  - start/stop stream;
+  - start/stop/pause/resume recording;
+  - enable or disable scene sources;
+  - enable or disable source filters.
+- Player actions:
+  - play playlist;
+  - play track;
+  - play next or previous playlist;
+  - stop, pause, resume;
+  - change global volume;
+  - change global crossfade.
+- Application themes:
+  - standard light;
+  - standard dark;
+  - cyberpunk;
+  - olive;
+  - midnight blue;
+  - dark red.
 - Interface languages:
-  - English
-  - Ukrainian
-  - Russian
-  - Polish
+  - English;
+  - Ukrainian;
+  - Russian;
+  - Polish.
+- Audio output device selection.
+- Local reset of all application data.
 
-## Intended Use
+## Data Storage
 
-This project is shared freely with the community and is intended for personal use. You can use it as a helper tool for your own streams, recordings, and local content creation workflow.
+Stream Music Player stores user data locally in the Windows roaming application data folder:
 
-## Notes About OBS
+```text
+%APPDATA%\StreamMusicPlayer\
+```
 
-Stream Music Player uses obs-websocket integration to receive events from OBS Studio. You need OBS Studio and obs-websocket configured if you want scene, stream, or recording event rules to work.
+For a typical Windows user this looks like:
 
-The application name does not use the OBS name because this is an independent project.
+```text
+C:\Users\<UserName>\AppData\Roaming\StreamMusicPlayer\
+```
 
-## AI Assistance
+The main database file is:
 
-This project was created with the help of AI. The implementation, interface, localization, and feature iterations were developed collaboratively with AI assistance.
+```text
+%APPDATA%\StreamMusicPlayer\app.db
+```
+
+This database stores playlists, tracks, rules, application settings, OBS connection settings, and other user configuration.
+
+Program releases do not include your personal `app.db` file. Your playlists and settings are not stored inside the release folder.
 
 ## Security and Privacy
 
@@ -103,13 +108,17 @@ All OBS communication is performed locally through obs-websocket on the user's m
 
 The application does not upload files or stream data to external servers.
 
+## Requirements
+
+- Windows.
+- .NET runtime compatible with the published build.
+- OBS Studio with obs-websocket enabled if OBS automation is needed.
+
 ## Author
 
-Created by FEDOT.
+Author: FEDOT.
 
-- Donation: https://destream.net/live/FEDOT/donate
-- YouTube channel: https://www.youtube.com/channel/UCAPMkkZzlYhVX4Rn5hRCW9g
+Donation: https://destream.net/live/FEDOT/donate
 
-## License
+YouTube channel: https://www.youtube.com/channel/UCAPMkkZzlYhVX4Rn5hRCW9g
 
-This project is published under the MIT License.

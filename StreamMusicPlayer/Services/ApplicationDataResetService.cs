@@ -36,6 +36,9 @@ public sealed class ApplicationDataResetService
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
+            DELETE FROM AutomationActions;
+            DELETE FROM AutomationEvents;
+            DELETE FROM AutomationRules;
             DELETE FROM EventRules;
             DELETE FROM Tracks;
             DELETE FROM Playlists;

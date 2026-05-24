@@ -12,8 +12,6 @@ public sealed class PlaylistRulesViewModel : ObservableObject
     private Playlist? completionPlaylist;
     private PlayMode playMode;
     private bool shuffleEnabled;
-    private double defaultCrossfadeSeconds;
-    private int defaultVolume;
     private string statusMessage = LocalizationService.T("Ready");
 
     public PlaylistRulesViewModel(Playlist playlist, IEnumerable<Playlist> playlists, Action saveAction)
@@ -23,7 +21,6 @@ public sealed class PlaylistRulesViewModel : ObservableObject
         Playlists = new ObservableCollection<Playlist>(playlists);
         PlayModes = new ObservableCollection<LocalizedValueOption<PlayMode>>(
         [
-            new(PlayMode.StopAfterPlaylist, "PlayModeStopAfterPlaylist"),
             new(PlayMode.Sequential, "PlayModeSequential"),
             new(PlayMode.RepeatOne, "PlayModeRepeatOne"),
             new(PlayMode.RepeatAll, "PlayModeRepeatAll")
@@ -31,16 +28,17 @@ public sealed class PlaylistRulesViewModel : ObservableObject
         CompletionActions = new ObservableCollection<LocalizedValueOption<PlaylistCompletionAction>>(
         [
             new(PlaylistCompletionAction.Stop, "CompletionStop"),
+            new(PlaylistCompletionAction.PlayPreviousPlaylist, "CompletionPlayPreviousPlaylist"),
             new(PlaylistCompletionAction.PlayNextPlaylist, "CompletionPlayNextPlaylist"),
             new(PlaylistCompletionAction.PlaySpecificPlaylist, "CompletionPlaySpecificPlaylist")
         ]);
 
-        playMode = playlist.PlayMode;
+        playMode = playlist.PlayMode == PlayMode.StopAfterPlaylist ? PlayMode.Sequential : playlist.PlayMode;
         shuffleEnabled = playlist.ShuffleEnabled;
-        completionAction = playlist.CompletionAction;
+        completionAction = playlist.PlayMode == PlayMode.StopAfterPlaylist
+            ? PlaylistCompletionAction.Stop
+            : playlist.CompletionAction;
         completionPlaylist = Playlists.FirstOrDefault(item => item.Id == playlist.CompletionPlaylistId);
-        defaultCrossfadeSeconds = playlist.DefaultCrossfadeSeconds;
-        defaultVolume = playlist.DefaultVolume;
 
         SaveCommand = new RelayCommand(_ => Save());
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -59,6 +57,9 @@ public sealed class PlaylistRulesViewModel : ObservableObject
             if (SetProperty(ref playMode, value))
             {
                 OnPropertyChanged(nameof(CanShuffle));
+                OnPropertyChanged(nameof(ShowShuffle));
+                OnPropertyChanged(nameof(ShowCompletionSettings));
+                OnPropertyChanged(nameof(ShowSpecificPlaylist));
                 if (!CanShuffle)
                 {
                     ShuffleEnabled = false;
@@ -74,6 +75,8 @@ public sealed class PlaylistRulesViewModel : ObservableObject
     }
 
     public bool CanShuffle => PlayMode == PlayMode.RepeatAll;
+    public bool ShowShuffle => PlayMode == PlayMode.RepeatAll;
+    public bool ShowCompletionSettings => PlayMode == PlayMode.Sequential;
 
     public PlaylistCompletionAction CompletionAction
     {
@@ -83,28 +86,18 @@ public sealed class PlaylistRulesViewModel : ObservableObject
             if (SetProperty(ref completionAction, value))
             {
                 OnPropertyChanged(nameof(NeedsSpecificPlaylist));
+                OnPropertyChanged(nameof(ShowSpecificPlaylist));
             }
         }
     }
 
     public bool NeedsSpecificPlaylist => CompletionAction == PlaylistCompletionAction.PlaySpecificPlaylist;
+    public bool ShowSpecificPlaylist => ShowCompletionSettings && NeedsSpecificPlaylist;
 
     public Playlist? CompletionPlaylist
     {
         get => completionPlaylist;
         set => SetProperty(ref completionPlaylist, value);
-    }
-
-    public double DefaultCrossfadeSeconds
-    {
-        get => defaultCrossfadeSeconds;
-        set => SetProperty(ref defaultCrossfadeSeconds, Math.Max(0, value));
-    }
-
-    public int DefaultVolume
-    {
-        get => defaultVolume;
-        set => SetProperty(ref defaultVolume, Math.Clamp(value, 0, 100));
     }
 
     public string StatusMessage
@@ -120,10 +113,8 @@ public sealed class PlaylistRulesViewModel : ObservableObject
         Playlist.PlayMode = PlayMode;
         Playlist.ShuffleEnabled = ShuffleEnabled && CanShuffle;
         Playlist.RepeatEnabled = PlayMode is PlayMode.RepeatOne or PlayMode.RepeatAll;
-        Playlist.CompletionAction = CompletionAction;
-        Playlist.CompletionPlaylistId = CompletionPlaylist?.Id ?? string.Empty;
-        Playlist.DefaultCrossfadeSeconds = DefaultCrossfadeSeconds;
-        Playlist.DefaultVolume = DefaultVolume;
+        Playlist.CompletionAction = ShowCompletionSettings ? CompletionAction : PlaylistCompletionAction.Stop;
+        Playlist.CompletionPlaylistId = ShowSpecificPlaylist ? CompletionPlaylist?.Id ?? string.Empty : string.Empty;
         saveAction();
         StatusMessage = LocalizationService.T("PlaylistRulesSaved");
     }
